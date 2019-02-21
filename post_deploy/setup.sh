@@ -1,8 +1,11 @@
 #!/bin/bash
 
 # Script to run on a freshly launched Ubuntu DSVM, to
+#  * Turn off auto updates
+#  * Update the OS
 #  * Install additionally required system packages
 #  * Setup and configure disk quotas
+#  * Setup quotas to survive reboot
 #  * Install JupyterHub systemdspawner 
 #  * Make changes to the JupyterHub configuration and restart the hub
 #  * Create user accounts for users to use the hub on the DSVM
@@ -19,7 +22,7 @@ err_and_exit() {
 }
 
 create_user_accounts_and_set_quotas() {
-  echo "-------- Creating user accounts"
+  echo "-------- Creating user accounts --------"
   user_file=$1
   if [ ! -f "${user_file}" ]; then
     err_and_exit "user file '${user_file}' doesn't exist"
@@ -50,7 +53,7 @@ edit_jupyterhub_config() {
   cpu_limit='1.0'
   mem_limit='2G'
  
-  echo "-------- Making changes to JupyterHub configuration in ${config}"
+  echo "-------- Making changes to JupyterHub configuration in ${config} --------"
   sed -i "s/c.Spawner.notebook_dir = '~\/notebooks'/c.Spawner.notebook_dir = '~'/g" ${config}
 
   echo "" >> ${config}
@@ -66,13 +69,13 @@ edit_jupyterhub_config() {
 }
 
 restart_jupyterhub() {
-  echo "-------- Restarting JupyterHub"
+  echo "-------- Restarting JupyterHub --------"
   systemctl restart jupyterhub
 
 }
 
 install_system_packages() {
-  echo "-------- Installing system packages"
+  echo "-------- Installing system packages --------"
   packages="sqlite3 quota quotatool linux-image-generic linux-headers-generic linux-modules-extra-$(uname -r)"
   for p in ${packages}; do
     echo "---- Installing package $p"
@@ -81,13 +84,13 @@ install_system_packages() {
 }
 
 install_systemd_spawner() {
-  echo "-------- Installing JupyterHub systemd spawner"
+  echo "-------- Installing JupyterHub systemd spawner --------"
   ${pip} install --upgrade pip
   ${pip} install jupyterhub-systemdspawner
 }
 
 setup_quota_system() {
-  echo "-------- Setting up quota system"
+  echo "-------- Setting up quota system --------"
   modprobe quota_v1 quota_v2 > /dev/null
   lsmod | grep quota > /dev/null 2> /dev/null
   if [ $? -eq 0 ]; then
@@ -100,7 +103,7 @@ setup_quota_system() {
   else
     err_and_exit "quota module not loaded"
   fi
-  echo "---- Remounting file systems with quota support"
+  echo "---- Remounting file systems with quota support --------"
   mount -o remount,usrquota /
   mount -o remount,usrquota /data
   #TODO: make this persistent
@@ -113,10 +116,36 @@ setup_quota_system() {
   done
 }
 
+configure_quotas_for_reboot() {
+    f='/etc/rc.local'
+    sed -i 's/exit 0//g' $f
+    echo 'modprobe quota_v1 quota_v2' >> $f
+    for partition in "/" "/data"; do
+      echo "mount -o remount,usrquota ${partition}" >> $f
+      echo "quotaon ${partition}" >> $f
+    done
+    echo 'exit 0' >> $f
+}
+
+turn_auto_updates_off() {
+  echo "-------- Turning auto updates off --------"
+  sed -i 's/APT::Periodic::Update-Package-Lists "1"/APT::Periodic::Update-Package-Lists "0"/g' /etc/apt/apt.conf.d/10periodic
+}
+
+update_system() {
+  echo "-------- Updating and upgrading the system --------"
+  apt-get update
+  apt-get upgrade -y --force-yes -qq
+}
+
 # main
 
+
+turn_auto_updates_off
+update_system
 install_system_packages
 setup_quota_system
+configure_quotas_for_reboot
 install_systemd_spawner
 edit_jupyterhub_config
 restart_jupyterhub
