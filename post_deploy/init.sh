@@ -28,8 +28,8 @@ err_and_exit() {
 create_user_accounts_and_set_quotas() {
   echo "-------- Creating user accounts --------"
   while read line; do
-    user=$(echo ${line} | cut -d\| -f1 | xargs)
-    pass=$(echo ${line} | cut -d\| -f2 | xargs)
+    user=$(echo ${line} | cut -d\| -f1)
+    pass=$(echo ${line} | cut -d\| -f2)
     if [ -z "${user}" ]; then
       err_and_exit "username must not be empty"
     fi
