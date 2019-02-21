@@ -8,7 +8,7 @@
 #  * Create user accounts for users to use the hub on the DSVM
 #    Note: users and their passwords are read from file
 #               with following format (one user per line):
-#               <username> | <password>
+#               <username>|<password>
 
 user_file="users.txt"
 pip='/data/anaconda/envs/py35/bin/pip'
