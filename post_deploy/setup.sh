@@ -49,7 +49,6 @@ edit_jupyterhub_config() {
   config="/etc/jupyterhub/jupyterhub_config.py"
   cpu_limit='1.0'
   mem_limit='2G'
-  admin_account='dsvmadmin'
  
   echo "-------- Making changes to JupyterHub configuration in ${config}"
   sed -i "s/c.Spawner.notebook_dir = '~\/notebooks'/c.Spawner.notebook_dir = '~'/g" ${config}
@@ -63,7 +62,6 @@ edit_jupyterhub_config() {
   echo "c.SystemdSpawner.cpu_limit = ${cpu_limit}" >> ${config}
   echo "c.SystemdSpawner.mem_limit = '${mem_limit}'" >> ${config}
   echo "c.SystemdSpawner.isolate_tmp = True" >> ${config}
-  echo "c.Authenticator.admin_users = set(['${admin_account}'])" >> ${config}
   echo "c.Authenticator.delete_invalid_users = True" >> ${config}
 }
 
