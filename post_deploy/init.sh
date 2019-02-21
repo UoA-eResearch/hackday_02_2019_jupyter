@@ -78,10 +78,8 @@ restart_jupyterhub() {
 install_system_packages() {
   echo "-------- Installing system packages --------"
   packages="sqlite3 quota quotatool linux-image-generic linux-headers-generic linux-modules-extra-$(uname -r)"
-  for p in ${packages}; do
-    echo "---- Installing package $p"
-    apt-get install -y ${package}
-  done
+  echo "----  Installing ${packages}"
+  apt-get install -y ${packages}
 }
 
 setup_quota_system() {
@@ -166,4 +164,3 @@ install_systemd_spawner
 edit_jupyterhub_config
 restart_jupyterhub
 create_user_accounts_and_set_quotas 
-
