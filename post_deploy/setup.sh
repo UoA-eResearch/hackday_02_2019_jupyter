@@ -4,17 +4,21 @@
 #  * Turn off auto updates
 #  * Update the OS
 #  * Install additionally required system packages
+#  * Install JupyterHub systemdspawner and other Python packages
 #  * Setup and configure disk quotas
-#  * Setup quotas to survive reboot
-#  * Install JupyterHub systemdspawner 
+#  * Enable quotas at system boot
 #  * Make changes to the JupyterHub configuration and restart the hub
 #  * Create user accounts for users to use the hub on the DSVM
 #    Note: users and their passwords are read from file
 #               with following format (one user per line):
 #               <username>|<password>
 
-user_file="users.txt"
-pip='/data/anaconda/envs/py35/bin/pip'
+user_file='users.txt'
+partitions='/ /data'
+conda_dir='/data/anaconda/envs/py35'
+pip="${conda_dir}/bin/pip"
+conda="${conda_dir}/bin/conda"
+python="${conda_dir}/bin/python"
 
 err_and_exit() {
   echo "ERROR: $1"
@@ -23,10 +27,6 @@ err_and_exit() {
 
 create_user_accounts_and_set_quotas() {
   echo "-------- Creating user accounts --------"
-  user_file=$1
-  if [ ! -f "${user_file}" ]; then
-    err_and_exit "user file '${user_file}' doesn't exist"
-  fi
   while read line; do
     user=$(echo ${line} | cut -d\| -f1 | xargs)
     pass=$(echo ${line} | cut -d\| -f2 | xargs)
@@ -43,8 +43,10 @@ create_user_accounts_and_set_quotas() {
     chmod -R 700 /home/${user}         # set permissions
     echo "${user}:${pass}" | chpasswd  # set password
     chsh -s /usr/sbin/nologin ${user}  # disable ssh login (notebook server spawning still works fine)
-    quotatool -u ${user} -b -q 2G -l 2G /
-    quotatool -u ${user} -b -q 2G -l 2G /data
+    # set user quotas
+    for partition in ${partitions}; do
+      quotatool -u ${user} -b -q 2G -l 2G ${partition}
+    done
   done < ${user_file}
 }
 
@@ -71,7 +73,6 @@ edit_jupyterhub_config() {
 restart_jupyterhub() {
   echo "-------- Restarting JupyterHub --------"
   systemctl restart jupyterhub
-
 }
 
 install_system_packages() {
@@ -81,12 +82,6 @@ install_system_packages() {
     echo "---- Installing package $p"
     apt-get install -y ${package}
   done
-}
-
-install_systemd_spawner() {
-  echo "-------- Installing JupyterHub systemd spawner --------"
-  ${pip} install --upgrade pip
-  ${pip} install jupyterhub-systemdspawner
 }
 
 setup_quota_system() {
@@ -104,12 +99,13 @@ setup_quota_system() {
     err_and_exit "quota module not loaded"
   fi
   echo "---- Remounting file systems with quota support --------"
-  mount -o remount,usrquota /
-  mount -o remount,usrquota /data
+  for partition in ${partitions}; do
+    mount -o remount,usrquota ${partition}
+  done
   #TODO: make this persistent
-  echo "---- Turning quota off"
+  echo "---- Turning off quotas"
   quotaoff -pa
-  for partition in "/" "/data"; do
+  for partition in ${partitions}; do
     echo "---- Running quotacheck and turning quota on on partition ${partition} "
     quotacheck -cum ${partition}
     quotaon ${partition}
@@ -120,16 +116,17 @@ configure_quotas_for_reboot() {
     f='/etc/rc.local'
     sed -i 's/exit 0//g' $f
     echo 'modprobe quota_v1 quota_v2' >> $f
-    for partition in "/" "/data"; do
+    for partition in ${partitions}; do
       echo "mount -o remount,usrquota ${partition}" >> $f
       echo "quotaon ${partition}" >> $f
     done
     echo 'exit 0' >> $f
 }
 
-turn_auto_updates_off() {
-  echo "-------- Turning auto updates off --------"
-  sed -i 's/APT::Periodic::Update-Package-Lists "1"/APT::Periodic::Update-Package-Lists "0"/g' /etc/apt/apt.conf.d/10periodic
+turn_off_auto_updates() {
+  echo "-------- Turning off auto updates --------"
+  apt_file='/etc/apt/apt.conf.d/10periodic'
+  sed -i 's/APT::Periodic::Update-Package-Lists "1"/APT::Periodic::Update-Package-Lists "0"/g' ${apt_file}
 }
 
 update_system() {
@@ -138,16 +135,35 @@ update_system() {
   apt-get upgrade -y --force-yes -qq
 }
 
+install_python_packages() {
+  echo "-------- Upgrading pip and installing Python packages --------"
+  ${pip} install --upgrade pip
+  ${pip} install jupyterhub-systemdspawner
+  ${pip} install ktransit
+  ${pip} install astroML
+  ${pip} install astroML_addons
+
+  src_dir='/tmp/python-bls'
+  git clone https://github.com/dfm/python-bls.git ${src_dir}
+  cd ${src_dir}
+  ${python} setup.py install
+  cd - && rm -rf ${src_dir}
+}
+
 # main
 
+if [ ! -f "${user_file}" ]; then
+  err_and_exit "user file '${user_file}' doesn't exist"
+fi
 
-turn_auto_updates_off
+turn_off_auto_updates
 update_system
 install_system_packages
+install_python_packages
 setup_quota_system
 configure_quotas_for_reboot
 install_systemd_spawner
 edit_jupyterhub_config
 restart_jupyterhub
-create_user_accounts_and_set_quotas ${user_file}
+create_user_accounts_and_set_quotas 
 
